@@ -1,6 +1,15 @@
 package com.etc;
 
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.URISyntaxException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -12,39 +21,68 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 public class JDBCUtils {
-	public static final String CLASSNAME = "com.mysql.jdbc.Driver";
-	public static final String URL = "jdbc:mysql://localhost:3306/kf17";
-	public static final String USERNAME = "root";
-	public static final String PASSWORD = "root";
 	
-	private JDBCUtils(){
+	
+	public static String DRIVER;
+	public static String URL;
+	public static String USER_NAME;
+	public static String PASSWORD;
+	
+	static {
+		String path;
+		try {
+			path = JDBCUtils.class.getResource("").toURI().getPath();
+			File file = new File(path+"jdbc.properties");
+			InputStream is = new BufferedInputStream(
+					new FileInputStream(file));
+			Properties p = new Properties();
+			p.load(is);
+			
+			DRIVER = p.getProperty("jdbc.driverClass");
+			URL = p.getProperty("jdbc.URL");
+			USER_NAME = p.getProperty("jdbc.userName");
+			PASSWORD = p.getProperty("jdbc.password");
+			
+		} catch (URISyntaxException e) {
+			e.printStackTrace();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 		
 	}
 	
+	
 	static {
 		try {
-			Class.forName(CLASSNAME);
+			Class.forName(DRIVER);
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
 		}
 	}
+	
+	private JDBCUtils(){
+		
+	}
 	/**
-	 * 获取连接
+	 * Get connection
 	 * @return
 	 */
 	public static Connection getconnnection(){
 		Connection con = null;
 		try {
-			con = DriverManager.getConnection(URL,USERNAME,PASSWORD);
+			con = DriverManager.getConnection(URL,USER_NAME,PASSWORD);
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}
 		return con;
 	}
 	/**
-	 * 关闭连接
+	 * Close connection
 	 * @param rs
 	 * @param st
 	 * @param con
@@ -70,27 +108,56 @@ public class JDBCUtils {
 		}
 	}
 	/**
-	 * 关闭连接
+	 * Close connection
+	 * @param rs
+	 */
+	public static void close(ResultSet rs){
+		Statement st = null;
+		Connection con = null;
+		try {
+			try {
+				if(rs != null){
+					st = rs.getStatement();
+					rs.close();
+				}
+			} finally{
+				try{
+					if(st != null){
+						con = st.getConnection();
+						st.close();
+					}
+				}finally{
+					if(con != null){
+						con.close();
+					}
+				}
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+	/**
+	 * Close connection
 	 * @param st
 	 * @param con
 	 */
-//	public static void close(Statement st,Connection con){
-//		try {
-//			try{
-//				if(st!=null){
-//					st.close();
-//				}				
-//			}finally{
-//				if(con!=null)
-//					con.close();		
-//			}
-//		} catch (SQLException e) {
-//			e.printStackTrace();
-//		}
-//	}
+	public static void close(Statement st,Connection con){
+		try {
+			try{
+				if(st!=null){
+					st.close();
+				}				
+			}finally{
+				if(con!=null)
+					con.close();		
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
 	
 	/**
-	 * 新增、修改、删除
+	 *insert/update/delete
 	 * @param sql
 	 * @param args
 	 * @return
@@ -110,16 +177,16 @@ public class JDBCUtils {
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}finally{
-			close(null,ps,con);
+			close(ps,con);
 		}
 		
 		return result;
 	}
 	/**
-	 * 查询，返回ResultSet，需手动关闭资源  不推荐使用
+	 * query, because need to manually close the resource, so not recommended for use it
 	 * @param sql
 	 * @param args
-	 * @return
+	 * @return ResultSet
 	 */
 	@Deprecated
 	public static ResultSet query(String sql,Object ... args){
@@ -133,21 +200,18 @@ public class JDBCUtils {
 					ps.setObject((i+1), args[i]);
 				}
 			}
-			result = ps.executeQuery();
-			
+			result = ps.executeQuery();	
 		} catch (SQLException e) {
 			e.printStackTrace();
-		}finally{
-			
 		}
 		return result;
 	}
 	
 	/**
-	 * 查询单条记录，并且返回一个Map
+	 *Query a single record 
 	 * @param sql
 	 * @param args
-	 * @return
+	 * @return Map<String,Object>
 	 */
 	public static Map<String,Object> queryForMap(String sql,Object ... args){
 		Map<String,Object> result = new HashMap<String, Object>();
@@ -159,22 +223,25 @@ public class JDBCUtils {
 	}
 	
 	/**
-	 * 查询单条记录，并且返回一个对象
+	 * Query a single record
 	 * @param sql
 	 * @param args
-	 * @return
+	 * @return <T>
 	 */
 	public static <T> T queryForObject(String sql,Class<T> clz,Object ... args){
 		T result = null;
-		
+		List<T> list =queryForList(sql, clz, args);
+		if(list.size()>0){
+			result = list.get(0);
+		}
 		return result;
 	}
 	
 	/**
-	 * 查询单条记录，并且返回多个Map
+	 * Query a single record
 	 * @param sql
 	 * @param args
-	 * @return
+	 * @return List<Map<String,Object>>
 	 */
 	public static List<Map<String,Object>> queryForList(String sql,Object ... args){
 		List<Map<String,Object>> result = new ArrayList<Map<String,Object>>();
@@ -208,18 +275,17 @@ public class JDBCUtils {
 	}
 	
 	/**
-	 * 查询单条记录，并且返回多个对象
+	 * Query a single record
 	 * @param sql
 	 * @param args
-	 * @return
+	 * @return List<T>
 	 */
 	public static <T> List<T> queryForList(String sql,Class<T> clz,Object ... args){
-		List<T> result = null;
+		List<T> result = new ArrayList<T>();
 		Connection con = null;
 		PreparedStatement ps = null;
 		ResultSet rs = null;
 		try {
-			T obj = clz.newInstance();
 			con = getconnnection();
 			ps = con.prepareStatement(sql);
 			if(args != null){
@@ -228,18 +294,34 @@ public class JDBCUtils {
 				}
 			}
 			rs = ps.executeQuery();
-			
-			clz.getDeclaredFields();
-			
+			ResultSetMetaData rsmd = rs.getMetaData();
+			int columnCount = rsmd.getColumnCount();
+			while(rs.next()){
+				T obj = clz.newInstance();
+				for (int i = 1; i <= columnCount ; i++) {					
+					String columnName = rsmd.getColumnName(i);
+					String methodName = "set"+columnName.substring(0,1).toUpperCase()+
+							columnName.substring(1, columnName.length());
+					Method method [] = clz.getMethods();
+					for (Method meth : method) {
+						if(methodName.equals(meth.getName())){
+							meth.invoke(obj, rs.getObject(i));		
+						}
+					}
+				}
+				result.add(obj);
+			}
 		} catch (InstantiationException e) {
 			e.printStackTrace();
 		} catch (IllegalAccessException e) {
 			e.printStackTrace();
 		} catch (SQLException e) {
-			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IllegalArgumentException e) {
+			e.printStackTrace();
+		} catch (InvocationTargetException e) {
 			e.printStackTrace();
 		}
-		
 		return result;
 	}
 }
