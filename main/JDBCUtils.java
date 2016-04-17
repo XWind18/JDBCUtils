@@ -321,6 +321,8 @@ public class JDBCUtils {
 			e.printStackTrace();
 		} catch (InvocationTargetException e) {
 			e.printStackTrace();
+		}fianlly{
+			close(rs,ps,con);
 		}
 		return result;
 	}
